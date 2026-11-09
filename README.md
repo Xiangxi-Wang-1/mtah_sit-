@@ -9,24 +9,31 @@ The organisers' original README is in [`COMPETITION_README.md`](COMPETITION_READ
 
 ## The pipeline
 
+**Possession can only switch at a real event; dead ball comes from layer 3**
+
 ```mermaid
 flowchart TD
-    T["Tracking data<br/>players + ball, 25 fps"] --> L0
-    ST["Smart Tagging<br/>set-piece windows"] --> L1
+    L0["<b>0 · Clean the data</b><br/><small>metres, attack direction, ball gaps</small>"]
+    L1["<b>1 · Physics features per frame</b><br/><small>distance margin, velocity, centroids</small>"]
+    L2["<b>2 · Touch detection</b><br/><small>ball acceleration, direction change</small>"]
+    L3["<b>3 · Dead-ball detector</b><br/><small>out of bounds, slowdown, set pieces</small>"]
+    L4["<b>4 · Possession model (ML)</b><br/><small>self-trained on certain moments</small>"]
+    L5["<b>5 · Sequence decoder</b><br/><small>semi-Markov, switches only at events</small>"]
+    L6["<b>6 · Abstention, then CSV</b><br/><small>X in blind stretches inside a possession</small>"]
 
-    L0["<b>Layer 0 · Clean</b><br/>remove impossible ball jumps, fill short gaps,<br/>fix tracker identity swaps and wrong-team labels"]
-    L1["<b>Layer 1 · Features</b><br/>who is near the ball, pressure, team shape,<br/>pressing, movement - per frame"]
-    L2["<b>Layer 2 · Touches</b><br/>receptions, kicks, touches,<br/>who controls the ball and when"]
-    L3["<b>Layer 3 · Dead ball</b><br/>ball out, stoppages, restarts<br/>-> D frames"]
-    L4["<b>Layer 4 · Possession models (ML)</b><br/>P(home has the ball) on every frame<br/>+ where possession changes, to whom"]
-    L5["<b>Layer 5 · Sequence decoder</b><br/>picks the most likely chain of possessions<br/>-> H / A / D per frame"]
-    L6["<b>Layer 6 · Submission</b> (to build)<br/>199,319-row CSV + official validator"]
+    L0 --> L1
+    L1 --> L2
+    L1 --> L3
+    L2 --> L4
+    L4 -- "P(team) per frame + events" --> L5
+    L3 -- "alive / dead" --> L5
+    L5 --> L6
 
-    L0 --> L1 --> L2 --> L3 --> L4 --> L5 --> L6
-
-    B["<b>Bench</b><br/>Metrica's 3 open games:<br/>answer keys from their event logs,<br/>tracking roughened to look like ours"]
-    B -- "trains (true labels on every live frame)" --> L4
-    B -- "scores every version with the official scorer" --> L5
+    classDef box fill:#ffffff,stroke:#c8c8c8,stroke-width:1px,color:#222222
+    classDef focus fill:#e8f0fe,stroke:#3b78e7,stroke-width:2px,color:#222222
+    class L0,L1,L2,L3,L4,L6 box
+    class L5 focus
+    linkStyle default stroke:#b0b0b0,stroke-width:1px
 ```
 
 | Layer | Folder | What it does |
