@@ -12,6 +12,7 @@ The organisers' original README is in [`COMPETITION_README.md`](COMPETITION_READ
 **Possession can only switch at a real event; dead ball comes from layer 3**
 
 ```mermaid
+%%{init: {"flowchart": {"wrappingWidth": 420, "curve": "linear"}, "themeVariables": {"edgeLabelBackground": "#ffffff"}}}%%
 flowchart TD
     L0["<b>0 · Clean the data</b><br/><small>metres, attack direction, ball gaps</small>"]
     L1["<b>1 · Physics features per frame</b><br/><small>distance margin, velocity, centroids</small>"]
@@ -26,7 +27,7 @@ flowchart TD
     L1 --> L3
     L2 --> L4
     L4 -- "P(team) per frame + events" --> L5
-    L3 -- "alive / dead" --> L5
+    L3 -- "alive / dead" ---> L5
     L5 --> L6
 
     classDef box fill:#ffffff,stroke:#c8c8c8,stroke-width:1px,color:#222222
