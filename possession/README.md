@@ -8,13 +8,15 @@ One folder per layer. Each layer reads the previous layer's output from `cache/`
 | `layer1_features/` | 1 · Physics features per frame | built |
 | `layer2_touches/` | 2 · Touches and ball-with-player segments | built |
 | `layer3_dead_ball/` | 3 · Dead-ball detector | built |
-| `layer4_possession_model/` | 4 · Possession evidence model (ML, self-trained) | built |
+| `layer4_possession_model/` | 4 · Possession models (ML, trained on the bench games) | built |
 | `layer5_sequence_decoder/` | 5 · Sequence decoder (event-anchored semi-Markov, H/A/D) | built |
 | `layer6_output/` | 6 · Abstention, submission CSV, validation | not built |
+| `bench/` | Metrica's 3 open games as a scored test and training set | built |
 
 Layers run in number order; each reads only lower-numbered layers' caches.
 
-`config.py` holds every tunable constant. None is tuned on any ground truth.
+`config.py` holds every tunable constant. None is tuned on the challenge match's ground truth;
+layer 5's weights are chosen on the bench games (other matches, allowed by RULES.md).
 
 `cache/` (frame-level arrays) is gitignored: it is derived tracking data and must never be
 published. `reports/` holds aggregate evaluation output only.

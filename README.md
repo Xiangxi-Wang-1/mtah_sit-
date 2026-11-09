@@ -1,194 +1,82 @@
-# More than a Hack 2027 — Phase 1: Ball Possession
+# Mall Pipeline: who has the ball, frame by frame
 
-**Organised by [Metrica Sports](https://metrica-sports.com), [FC Barcelona](https://www.fcbarcelona.com)
-and the [Mobile World Capital Barcelona](https://www.mwcbarcelona.com)**, at the Talent Arena in Barcelona.
+Our entry for **More than a Hack 2027** (Metrica Sports × FC Barcelona). For every one of the
+199,319 video frames of Barcelona vs Athletic Club, the pipeline outputs **H** (home has the ball),
+**A** (away has the ball) or **D** (dead ball). It is ranked on spellF1 (whole possessions), with
+macroF1 (single frames) as the tie-break.
 
-A football data challenge on real professional match data, open to analysts, data scientists and
-engineers. You are given one complete LaLiga match — two camera feeds, automatic tracking of every
-player and the ball, automatic tactical tagging, and the camera-to-pitch geometry — and one
-question to answer with it.
+The organisers' original README is in [`COMPETITION_README.md`](COMPETITION_README.md).
 
----
+## The pipeline
 
-## The task
+```mermaid
+flowchart TD
+    T["Tracking data<br/>players + ball, 25 fps"] --> L0
+    ST["Smart Tagging<br/>set-piece windows"] --> L1
 
-**For every frame of the match, say who has the ball.**
+    L0["<b>Layer 0 · Clean</b><br/>remove impossible ball jumps, fill short gaps,<br/>fix tracker identity swaps and wrong-team labels"]
+    L1["<b>Layer 1 · Features</b><br/>who is near the ball, pressure, team shape,<br/>pressing, movement - per frame"]
+    L2["<b>Layer 2 · Touches</b><br/>receptions, kicks, touches,<br/>who controls the ball and when"]
+    L3["<b>Layer 3 · Dead ball</b><br/>ball out, stoppages, restarts<br/>-> D frames"]
+    L4["<b>Layer 4 · Possession models (ML)</b><br/>P(home has the ball) on every frame<br/>+ where possession changes, to whom"]
+    L5["<b>Layer 5 · Sequence decoder</b><br/>picks the most likely chain of possessions<br/>-> H / A / D per frame"]
+    L6["<b>Layer 6 · Submission</b> (to build)<br/>199,319-row CSV + official validator"]
+
+    L0 --> L1 --> L2 --> L3 --> L4 --> L5 --> L6
+
+    B["<b>Bench</b><br/>Metrica's 3 open games:<br/>answer keys from their event logs,<br/>tracking roughened to look like ours"]
+    B -- "trains (true labels on every live frame)" --> L4
+    B -- "scores every version with the official scorer" --> L5
+```
+
+| Layer | Folder | What it does |
+|---|---|---|
+| 0 | `possession/layer0_clean` | Cleans the tracking: drops ball detections that move impossibly fast, fills gaps up to 1 s, splits tracks where the tracker swapped two players, repairs players given to the wrong team |
+| 1 | `possession/layer1_features` | Physics features per frame: distances to the ball, players under pressure, team shape and position, pressing, movement |
+| 2 | `possession/layer2_touches` | Finds touches from the ball's speed and direction changes (receptions, kicks, deflections) and who made them, plus spells where a player controls the ball |
+| 3 | `possession/layer3_dead_ball` | Detects stoppages (ball out, fouls, restarts) from ball position, ball gaps, players slowing down and set-piece shapes |
+| 4 | `possession/layer4_possession_model` | Two gradient-boosted models trained on the bench games: the chance that home has the ball (looking 8 s back and ahead), and the chance that possession passes to home or away at each moment |
+| 5 | `possession/layer5_sequence_decoder` | Combines it all: possession can only change at a credible moment (a reception, a kick, a learned change point), and the decoder picks the best overall sequence |
+| bench | `possession/bench` | Metrica's 3 open sample games, turned into a scored test set: frame-level answer keys from their event logs (following Metrica's own event definitions), tracking roughened to match ours |
+
+## Results
+
+| | Baseline (nearest player) | Pipeline v0 | Pipeline v1 (current) |
+|---|---|---|---|
+| Bench spellF1 (3 games, models never trained on the game scored) | 0.361 | 0.508 | **0.681** |
+| Bench macroF1 | 0.816 | 0.870 | **0.901** |
+| Public 5 minutes of the challenge match, spellF1 / macroF1 | 0.326 / 0.621 | 0.545 / 0.830 | **0.562 / 0.848** |
+
+- **v0:** the layer-4 model learned only from calm, certain moments of the challenge match, and
+  the decoder settings were set by hand.
+- **v1:** layer 4 trains on true labels from the bench games, and the decoder settings were chosen
+  on the bench.
+- **The public 5 minutes are only a sanity check.** The rules forbid tuning on them, and with
+  only 17 possessions, one possession moves spellF1 by about 6 points.
+
+## Running it
 
 ```
-frame,label
-11185,A        away in possession, ball alive
-11186,A
-...
-18240,D        dead ball
-...
-18684,H        home in possession, ball alive
-```
-
-That is the whole task. One CSV, one row per video frame, 199,319 rows. It is scored automatically
-against a private frame-by-frame ground truth, so there is a number at the end and no argument
-about it — no jury, and no presentation to argue from.
-
-The tracking is automatic and uncorrected: it has gaps and identity
-switches, and the ball itself is invisible on 41% of the frames you are scored on.
-
----
-
-## The challenge in one screen
-
-| |                                                                                                                           |
-|---|---------------------------------------------------------------------------------------------------------------------------|
-| **Input** | one full match: tactical video, broadcast video, automatic tracking **with the ball** for both, Smart Tagging, homography |
-| **Output** | `frame,label` CSV, 199,319 rows, labels `H` / `A` / `D` / `X`                                                             |
-| **Ranked on** | `spellF1` — how many of the match's real possessions you recovered as whole possessions                                   |
-| **Also reported** | `macroF1` — the per-frame view, and the first tie-break                                                                   |
-| **Baseline to beat** | `spellF1` **0.2433**, in this repository                                                                                  |
-| **Ground truth you get** | the first **5 minutes** of play — to check your pipeline, not to train on                                              |
-| **Ground truth you are scored on** | the full match, **private**                                                                                               |
-
-It is deliberately **not** a tracking challenge. The tracking, tagging and homography are given to
-you so that nobody has to rebuild detection, re-identification and camera calibration before
-getting to the actual question. See [CHALLENGE.md](CHALLENGE.md).
-
----
-
-## Try it right now
-
-The scorer, a 5-minute ground truth and four working baselines are in this repository. No
-enrolment, no download, no data:
-
-```bash
 pip install -r requirements.txt
-python evaluation/run_evaluation.py
+git clone https://github.com/metrica-sports/sample-data   # bench games; set BENCH_SRC to its path
+python -m possession.bench.build                           # bench answer keys + degraded tracking
+python -m possession.bench.score                           # layers 1-5 on the bench, official scorer
+# then layers 0-5 on the challenge match (data in data/, see DATA.md):
+python -m possession.layer0_clean.run
+python -m possession.layer1_features.run
+python -m possession.layer2_touches.run
+python -m possession.layer3_dead_ball.run
+python -m possession.layer4_possession_model.run
+python -m possession.layer5_sequence_decoder.run
+python -m possession.compare_models
 ```
 
-Scored on the public 5 minutes, not on the full match -- which is why the order below is not the
-order of the floor quoted above:
+Every setting is in `possession/config.py`, and each layer folder has a README explaining its
+choices and checks. `cache/` (frame-level data derived from the match) is never committed, as
+the rules forbid redistributing it. `bench_keys/` holds the bench answer keys.
 
-```
-scoreboard  gt/BAR-ATH_possession_gt_public.csv  199319 frames  7500 graded  21 gt segments
-ground truth has 17 possessions of mean 14.2 s  <- compare the poss and dur columns
+## What's next
 
-rank  submission                macroF1  spellF1   poss     dur  
-----  ------------------------  -------  -------  -----  ------  
-   1  baseline_smooth125         0.5812   0.4242     16    18.5  
-   2  baseline_smooth50          0.6207   0.3256     26    10.8  
-   3  baseline_smooth25          0.6200   0.2868     36     7.6  
-   4  baseline_raw               0.5972   0.0378    131     2.0  
-```
-
-Those four are **the same algorithm four times** — nearest tracked player to the ball, then a
-majority vote over a window. Only the window changes. `macroF1` barely moves; `spellF1` moves by a
-factor of eleven. That disagreement is the whole point of the metric, and
-[EVALUATION.md](EVALUATION.md) explains it.
-
-Once you have the data, regenerate them yourself and go further:
-
-```bash
-python starter/baseline.py                              # rebuild the four baselines
-python evaluation/validate_submission.py <your>.csv     # before every submission
-```
-
-**Validate every file before you submit it.** `validate_submission.py` runs exactly the checks the
-official scorer runs, and a file that fails them is dropped from the board with a one-line reason.
-It takes two seconds and it is the single most common way a good entry scores nothing.
-
----
-
-## Getting the data
-
-The match assets are released to enrolled participants who have accepted the terms of use.
-
-1. Enrol: **[More than A Hack 2027](https://landing.mobileworldcapital.com/more-than-a-hack-2027)**
-2. Read and sign the terms and conditions in the registration form
-3. You receive a download link.
-4. Unpack it into `./data`, or point `MTAH_DATA_DIR` at wherever you put it.
-
-Full description of every asset and how the frames line up: **[DATA.md](DATA.md)**.
-
----
-
-## Read these, in this order
-
-| | |
-|---|---|
-| **[CHALLENGE.md](CHALLENGE.md)** | the problem, the four labels, what counts as possession |
-| **[DATA.md](DATA.md)** | every provided asset, its format, and the frame alignment |
-| **[EVALUATION.md](EVALUATION.md)** | how you are scored, and why — read before optimising anything |
-| **[SUBMISSION.md](SUBMISSION.md)** | the file contract, the three deliverables, how to submit |
-| **[RULES.md](RULES.md)** | what you may and may not do |
-| **[FAQ.md](FAQ.md)** | |
-| **[OVERVIEW.md](OVERVIEW.md)** | the competition as a whole — context, why the 2027 format changed, the calendar |
-
-
----
-
-## What is in this repository
-
-```
-games.py                    per-match constants, asset paths and the frame alignment
-evaluation/
-  possession_metrics.py     the metric library — every number on the board is defined here
-  run_evaluation.py         the scorer. This exact file produces the official result
-  validate_submission.py    check a file before you send it
-  gt/                       the public 5-minute ground truth
-  results/                  the four baselines; put your submissions here
-starter/
-  baseline.py               the reference baseline, numpy only
-  load_atd.py               read the tracking and line it up with video frames
-  load_smart_tagging.py     read the tactical tagging as video-frame intervals
-  load_homography.py        read the homography; project pitch <-> pixels
-  utils.py                  pitch plotting for the notebooks
-  01_smart_tagging.ipynb    guided tour of the tactical tagging
-  02_tracking_atd.ipynb     guided tour of the tracking data, with plots
-  03_first_submission.ipynb data in, scored submission out — start here
-data/                       unpack the downloaded match assets here. Empty in a fresh clone
-```
-
-The scorer you run locally is the scorer that decides the competition. If it scores on your
-machine, it scores the same way on ours.
-
----
-
-## Requirements
-
-**Python 3.8 or newer.** The evaluation needs `numpy` and `pandas` and nothing else; it is tested
-under 3.8 and 3.11 and produces identical output under both. `starter/baseline.py` needs nothing
-more either — you can reach a scored submission without installing anything else.
-
-The notebooks additionally want `kloppy` and `matplotlib` (`requirements-starter.txt`), and
-**Python 3.9+ is recommended for those**: on Windows, installing Jupyter under 3.8 hits a
-`pywinpty` build failure that has nothing to do with this repository.
-
----
-
-## Timeline
-
-| |                |
-|---|----------------|
-| registration opens | **October 1, 2026** |
-| data released | **October 20, 2026** |
-| submission deadline | **November 17, 2026** |
-| results announced | **Before November 26, 2026**      |
-
----
-
-## Questions
-
-Open an issue for anything about the data, the metrics or the documentation — corrections are
-genuinely useful, and a fix that helps you helps everyone equally. For enrolment and the terms of
-use: **hackathon.talentarena@mobileworldcapital.com**.
-
-## Licence and citation
-
-The code and documentation in this repository are released under the MIT Licence — see
-[LICENSE](LICENSE). **The match data is not covered by it**: it is separately licensed for this
-competition only, under the terms you accept at enrolment.
-
-```bibtex
-@misc{mtah2027,
-  title  = {More than a Hack 2027: Phase 1 - Ball Possession},
-  author = {Metrica Sports and FC Barcelona Innovation Hub},
-  year   = {2027},
-  url    = {https://github.com/metrica-sports/more-than-a-hack-2027}
-}
-```
+- **More training games:** DFL / Sportec open data (7 Bundesliga matches).
+- **Layer 6:** write the submission CSV and check it with the official validator.
+- **Short possessions:** under 3 s, still the main source of error.
